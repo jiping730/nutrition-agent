@@ -21,6 +21,7 @@ from core.observability import (
     bind_observation_context,
     new_trace_id,
     record_conversation,
+    record_context_metrics,
     record_fallback,
     record_grill_decision,
     record_grill_rounds,
@@ -518,6 +519,7 @@ class ConversationRuntime:
             structured_state=structured_state,
             user_id=user_id,
         )
+        record_context_metrics("prepare", preparation.metadata)
         if preparation.summary_record is not None:
             self.store.save_context_summary(
                 conversation_id=conversation_id,
@@ -526,9 +528,11 @@ class ConversationRuntime:
                 payload=preparation.summary_record,
             )
         if stream_emit is not None:
+            stream_emit("context.preflight", preparation.metadata)
             if preparation.metadata.get("compacted"):
                 stream_emit("context.started", preparation.metadata)
                 stream_emit("context.compacted", preparation.metadata)
+                stream_emit("context.compaction.started", preparation.metadata)
         initial_state: dict[str, Any] = {
             "messages": preparation.recent_messages,
             "user_id": user_id,
@@ -689,8 +693,21 @@ class ConversationRuntime:
             tenant_id=tenant_id,
         )
 
+        try:
+            self.store.update_context_usage(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                metadata=response.context,
+            )
+        except Exception as exc:
+            log_event(self.logger, 30, "context_usage_persist_failed", error_type=type(exc).__name__)
+
         if stream_emit is not None and response.context.get("compacted"):
             stream_emit("context.completed", response.context)
+            stream_emit("context.compaction.completed", response.context)
+        if stream_emit is not None:
+            stream_emit("context.usage", response.context)
 
         record_conversation(response_type, grill_action or "none", elapsed)
         record_langfuse_trace(

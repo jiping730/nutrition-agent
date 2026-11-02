@@ -47,10 +47,15 @@ class Settings(BaseSettings):
     context_reserved_output_tokens: int = 4096
     context_reserved_system_tokens: int = 4096
     context_safety_margin_tokens: int = 1024
+    context_estimate_safety_factor: float = 1.15
+    context_precompact_ratio: float = 0.70
     context_soft_limit_ratio: float = 0.75
     context_hard_limit_ratio: float = 0.90
     context_recent_turns: int = 6
+    context_min_recent_messages: int = 2
+    context_max_compaction_rounds: int = 3
     context_summary_max_tokens: int = 1200
+    context_summary_input_tokens: int = 8192
     context_compaction_batch_turns: int = 8
     context_summary_model: Optional[str] = None
     context_max_tool_chars: int = 12_000

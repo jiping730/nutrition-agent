@@ -160,9 +160,7 @@ class ConversationContextRecord(Base):
 
     __tablename__ = "conversation_contexts"
 
-    conversation_id: Mapped[str] = mapped_column(
-        ForeignKey("conversations.id", ondelete="CASCADE"), primary_key=True
-    )
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), primary_key=True)
     tenant_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     user_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
@@ -173,6 +171,15 @@ class ConversationContextRecord(Base):
     source_model: Mapped[str] = mapped_column(String(128), default="deterministic", nullable=False)
     content_hash: Mapped[str] = mapped_column(String(128), default="", nullable=False)
     fallback: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    estimated_tokens_before: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    estimated_tokens_after: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    compression_ratio: Mapped[float] = mapped_column(Float, default=0.0, server_default="0", nullable=False)
+    compaction_reason: Mapped[str] = mapped_column(String(64), default="none", server_default="none", nullable=False)
+    compaction_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    overflow_prevented: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    estimation_mode: Mapped[str] = mapped_column(
+        String(64), default="conservative_estimate", server_default="conservative_estimate", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
@@ -348,7 +355,9 @@ class KnowledgeDocumentRecord(Base):
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     tenant_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
-    scope: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="tenant", server_default="tenant")
+    scope: Mapped[str] = mapped_column(
+        String(32), index=True, nullable=False, default="tenant", server_default="tenant"
+    )
     owner_user_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source_name: Mapped[str] = mapped_column(String(256), index=True, nullable=False)
@@ -403,7 +412,9 @@ class KnowledgeBuildRecord(Base):
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
     tenant_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
-    scope: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="tenant", server_default="tenant")
+    scope: Mapped[str] = mapped_column(
+        String(32), index=True, nullable=False, default="tenant", server_default="tenant"
+    )
     owner_user_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     index_version: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="building")
@@ -424,7 +435,9 @@ class KnowledgeRetrievalEventRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
-    scope: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="tenant", server_default="tenant")
+    scope: Mapped[str] = mapped_column(
+        String(32), index=True, nullable=False, default="tenant", server_default="tenant"
+    )
     owner_user_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     query: Mapped[str] = mapped_column(String(2_000), nullable=False)
     access_groups: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["public"], nullable=False)
@@ -590,7 +603,9 @@ class ConversationStore:
                         "user_profiles",
                     ):
                         session.execute(
-                            text(f"UPDATE {table} SET tenant_id = :tenant_id WHERE user_id = :user_id AND tenant_id IS NULL"),
+                            text(
+                                f"UPDATE {table} SET tenant_id = :tenant_id WHERE user_id = :user_id AND tenant_id IS NULL"
+                            ),
                             {"tenant_id": tenant_id, "user_id": user_id},
                         )
                     for table, column in (
@@ -599,7 +614,9 @@ class ConversationStore:
                         ("knowledge_retrieval_events", "initiated_by"),
                     ):
                         session.execute(
-                            text(f"UPDATE {table} SET tenant_id = :tenant_id WHERE {column} = :user_id AND tenant_id IS NULL"),
+                            text(
+                                f"UPDATE {table} SET tenant_id = :tenant_id WHERE {column} = :user_id AND tenant_id IS NULL"
+                            ),
                             {"tenant_id": tenant_id, "user_id": user_id},
                         )
             except IntegrityError:
@@ -1408,7 +1425,9 @@ class ConversationStore:
             )
             session.execute(delete(MessageRecord).where(MessageRecord.conversation_id == conversation_id))
             session.execute(delete(IdempotencyRecord).where(IdempotencyRecord.conversation_id == conversation_id))
-            session.execute(delete(ConversationContextRecord).where(ConversationContextRecord.conversation_id == conversation_id))
+            session.execute(
+                delete(ConversationContextRecord).where(ConversationContextRecord.conversation_id == conversation_id)
+            )
             session.delete(conversation)
 
     def load_context_summary(
@@ -1444,6 +1463,13 @@ class ConversationStore:
                 "source_model": record.source_model,
                 "content_hash": record.content_hash,
                 "fallback": record.fallback,
+                "estimated_tokens_before": record.estimated_tokens_before,
+                "estimated_tokens_after": record.estimated_tokens_after,
+                "compression_ratio": record.compression_ratio,
+                "compaction_reason": record.compaction_reason,
+                "compaction_count": record.compaction_count,
+                "overflow_prevented": record.overflow_prevented,
+                "estimation_mode": record.estimation_mode,
                 "created_at": _as_utc(record.created_at).isoformat(),
                 "updated_at": _as_utc(record.updated_at).isoformat(),
             }
@@ -1484,13 +1510,61 @@ class ConversationStore:
                 "source_model": str(payload.get("source_model", "deterministic"))[:128],
                 "content_hash": str(payload.get("content_hash", ""))[:128],
                 "fallback": bool(payload.get("fallback", False)),
+                "estimated_tokens_before": int(payload.get("estimated_tokens_before", 0) or 0),
+                "estimated_tokens_after": int(payload.get("estimated_tokens_after", 0) or 0),
+                "compression_ratio": float(payload.get("compression_ratio", 0.0) or 0.0),
+                "compaction_reason": str(payload.get("compaction_reason", "none"))[:64],
+                "compaction_count": int(payload.get("compaction_count", 0) or 0),
+                "overflow_prevented": bool(payload.get("overflow_prevented", False)),
+                "estimation_mode": str(payload.get("estimation_mode", "conservative_estimate"))[:64],
             }
             if record is None:
-                session.add(ConversationContextRecord(conversation_id=conversation_id, created_at=now, updated_at=now, **values))
+                session.add(
+                    ConversationContextRecord(conversation_id=conversation_id, created_at=now, updated_at=now, **values)
+                )
             else:
                 for key, value in values.items():
                     setattr(record, key, value)
                 record.updated_at = now
+
+    def update_context_usage(
+        self,
+        *,
+        conversation_id: str,
+        user_id: str,
+        tenant_id: str | None,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Persist the latest bounded context usage when a summary exists."""
+
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        with self.session_factory.begin() as session:
+            conversation = session.scalar(
+                select(ConversationRecord).where(
+                    ConversationRecord.id == conversation_id,
+                    ConversationRecord.tenant_id == resolved_tenant_id,
+                    ConversationRecord.user_id == user_id,
+                )
+            )
+            if conversation is None:
+                return
+            record = session.get(ConversationContextRecord, conversation_id)
+            if record is None:
+                return
+            record.estimated_tokens_before = int(
+                metadata.get("estimated_tokens_before", record.estimated_tokens_before) or 0
+            )
+            record.estimated_tokens_after = int(
+                metadata.get(
+                    "estimated_tokens_after", metadata.get("estimated_input_tokens", record.estimated_tokens_after)
+                )
+                or 0
+            )
+            record.compression_ratio = float(metadata.get("compression_ratio", record.compression_ratio) or 0.0)
+            record.compaction_reason = str(metadata.get("compaction_reason", record.compaction_reason))[:64]
+            record.compaction_count = int(metadata.get("compaction_count", record.compaction_count) or 0)
+            record.overflow_prevented = bool(metadata.get("overflow_prevented", record.overflow_prevented))
+            record.updated_at = utc_now()
 
     def get_idempotent_response(
         self, conversation_id: str, user_id: str, request_id: str, tenant_id: str | None = None
@@ -1706,9 +1780,7 @@ class ConversationStore:
             if record is not None:
                 record.response_json = dict(response_payload)
 
-    def latest_user_message(
-        self, conversation_id: str, user_id: str, tenant_id: str | None = None
-    ) -> dict[str, Any]:
+    def latest_user_message(self, conversation_id: str, user_id: str, tenant_id: str | None = None) -> dict[str, Any]:
         """Return the latest user turn after enforcing conversation ownership."""
 
         resolved_tenant_id = self._scope_tenant(user_id, tenant_id)

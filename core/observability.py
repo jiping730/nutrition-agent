@@ -146,6 +146,37 @@ FALLBACKS = Counter(
     "Fallback paths grouped by bounded reason.",
     ("kind",),
 )
+CONTEXT_ESTIMATED_TOKENS = Histogram(
+    "eat_agent_context_estimated_tokens",
+    "Conservative context-token estimates before and after rendering.",
+    ("stage", "which"),
+    buckets=(128, 256, 512, 1024, 2048, 4096, 8192, 16_384, 32_768, 65_536),
+)
+CONTEXT_COMPACTIONS = Counter(
+    "eat_agent_context_compactions_total",
+    "Context compactions grouped by bounded reason and outcome.",
+    ("reason", "outcome"),
+)
+CONTEXT_OVERFLOW = Counter(
+    "eat_agent_context_overflow_total",
+    "Context overflow outcomes before model invocation.",
+    ("outcome",),
+)
+CONTEXT_COMPRESSION_RATIO = Histogram(
+    "eat_agent_context_compression_ratio",
+    "Ratio of rendered context estimates to the original estimate.",
+    buckets=(0.05, 0.1, 0.2, 0.35, 0.5, 0.7, 0.85, 1.0, 1.25),
+)
+CONTEXT_SUMMARY_FALLBACKS = Counter(
+    "eat_agent_context_summary_fallbacks_total",
+    "Deterministic context-summary fallbacks.",
+    ("stage",),
+)
+CONTEXT_BUDGET_VIOLATIONS = Counter(
+    "eat_agent_context_budget_violations_total",
+    "Budget violations detected before a model call.",
+    ("stage",),
+)
 
 
 @dataclass(frozen=True)
@@ -287,6 +318,38 @@ def record_rag_retrieval(status: str, hit: bool, elapsed: float, document_count:
 
 def record_fallback(kind: str) -> None:
     FALLBACKS.labels(kind=kind or "unknown").inc()
+
+
+def record_context_metrics(stage: str, metadata: Mapping[str, Any] | None) -> None:
+    """Record bounded context governance metrics without prompt content."""
+
+    payload = metadata or {}
+    normalized_stage = stage if stage in {"prepare", "render", "summary"} else "unknown"
+    before = max(0, int(payload.get("estimated_tokens_before", payload.get("estimated_input_tokens", 0)) or 0))
+    after = max(0, int(payload.get("estimated_tokens_after", payload.get("estimated_input_tokens", 0)) or 0))
+    if before:
+        CONTEXT_ESTIMATED_TOKENS.labels(stage=normalized_stage, which="before").observe(before)
+    if after:
+        CONTEXT_ESTIMATED_TOKENS.labels(stage=normalized_stage, which="after").observe(after)
+
+    if payload.get("compacted") or payload.get("compression_rounds", 0):
+        reason = str(payload.get("compaction_reason") or "dynamic")[:32]
+        outcome = "fallback" if payload.get("fallback") else "success"
+        CONTEXT_COMPACTIONS.labels(reason=reason, outcome=outcome).inc()
+    if payload.get("fallback"):
+        CONTEXT_SUMMARY_FALLBACKS.labels(stage=normalized_stage).inc()
+    if payload.get("overflow_rejected"):
+        CONTEXT_OVERFLOW.labels(outcome="rejected").inc()
+    elif payload.get("overflow_prevented"):
+        CONTEXT_OVERFLOW.labels(outcome="prevented").inc()
+    if payload.get("budget_violation"):
+        CONTEXT_BUDGET_VIOLATIONS.labels(stage=normalized_stage).inc()
+    try:
+        ratio = float(payload.get("compression_ratio", 0) or 0)
+    except (TypeError, ValueError):
+        ratio = 0.0
+    if ratio > 0:
+        CONTEXT_COMPRESSION_RATIO.observe(ratio)
 
 
 def record_rate_limit_rejection() -> None:

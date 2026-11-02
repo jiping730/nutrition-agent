@@ -11,7 +11,7 @@ from core.grill_engine import GrillContext, GrillEngine, TaskProfile, get_profil
 from core.intent_router import RequestIntent, classify_request_with_model
 from core.logging_config import configure_logging, log_event
 from core.memory import MemoryManager
-from core.observability import record_fallback, start_span
+from core.observability import record_context_metrics, record_fallback, start_span
 from core.offline_answer import OfflineAnswerService
 from core.safety_guard import SafetyDecision, SafetyGuard, safety_summary
 from core.streaming import StreamCancelled
@@ -596,6 +596,60 @@ def create_workflow(
         request_intent = state.get("request_intent", {}) or {}
         operation = state.get("current_operation", "answer") or "answer"
 
+        def finalize_context_prompt(rendered: Any, prefix: str, suffix: str) -> tuple[str, bool]:
+            prompt_text = prefix + rendered.text + suffix
+            metadata = dict(state.get("context_metadata", {}) or {})
+            metadata.update(
+                {
+                    "estimated_tokens_before": metadata.get(
+                        "estimated_tokens_before", metadata.get("estimated_input_tokens", 0)
+                    ),
+                    "estimated_tokens_after": estimate_tokens(prompt_text),
+                    "estimated_input_tokens": estimate_tokens(prompt_text),
+                    "budget_tokens": context_budget.input_budget,
+                    "compression_rounds": rendered.compression_rounds,
+                    "reduced_sections": list(rendered.reduced_sections),
+                    "compacted": bool(metadata.get("compacted") or rendered.reduced_sections),
+                    "compaction_reason": metadata.get("compaction_reason")
+                    or ("dynamic_render" if rendered.reduced_sections else "none"),
+                    "overflow_rejected": rendered.overflow_rejected,
+                    "budget_violation": rendered.estimated_tokens > rendered.max_tokens,
+                    "overflow_prevented": not rendered.overflow_rejected,
+                    "estimation_mode": "conservative_estimate",
+                }
+            )
+            metadata["compression_ratio"] = round(
+                metadata["estimated_tokens_after"]
+                / max(1, int(metadata.get("estimated_tokens_before", metadata["estimated_tokens_after"]))),
+                4,
+            )
+            state["context_metadata"] = metadata
+            record_context_metrics("render", metadata)
+            if rendered.reduced_sections and state.get("stream_emit") is not None:
+                emit_event(state, "context.compaction.started", {"sections": list(rendered.reduced_sections)})
+                emit_event(
+                    state,
+                    "context.compaction.completed",
+                    {
+                        "estimated_tokens": rendered.estimated_tokens,
+                        "sections": list(rendered.reduced_sections),
+                        "compression_rounds": rendered.compression_rounds,
+                    },
+                )
+            rejected = rendered.overflow_rejected or not context_budget.within_hard_limit(
+                metadata["estimated_tokens_after"]
+            )
+            if rejected and state.get("stream_emit") is not None:
+                emit_event(
+                    state,
+                    "context.overflow",
+                    {
+                        "estimated_tokens": metadata["estimated_tokens_after"],
+                        "hard_limit_tokens": context_budget.hard_limit,
+                    },
+                )
+            return prompt_text, rejected
+
         safety_payload = state.get("safety", {}) or {}
         if safety_payload.get("action") in {"block", "refuse", "escalate"}:
             return append_safe_answer(
@@ -642,19 +696,19 @@ def create_workflow(
                 1,
                 context_budget.input_budget - estimate_tokens(static_prefix + static_suffix),
             )
-            prompt = (
-                static_prefix
-                + context_assembler.render_for_prompt(
-                    followup_packet,
-                    max_tokens=available_context_tokens,
-                )
-                + static_suffix
+            rendered = context_assembler.render_with_metadata(
+                followup_packet,
+                max_tokens=available_context_tokens,
             )
-            metadata = dict(state.get("context_metadata", {}) or {})
-            metadata["estimated_input_tokens"] = estimate_tokens(prompt)
-            metadata["budget_tokens"] = context_budget.input_budget
-            metadata["overflow_prevented"] = context_budget.within_hard_limit(metadata["estimated_input_tokens"])
-            state["context_metadata"] = metadata
+            prompt, context_rejected = finalize_context_prompt(rendered, static_prefix, static_suffix)
+            if context_rejected:
+                state["answer_mode"] = "offline"
+                state["answer_reason"] = "context_overflow"
+                state["answer_confidence"] = "low"
+                state["answer_next_step"] = "new_conversation"
+                return append_safe_answer(
+                    state, "当前对话内容过长，建议新建会话后继续，我不会丢失你已经保存的历史记录。"
+                )
         else:
             untrusted_outputs: dict[str, str] = {}
             for tool_name, raw_output in (state.get("tool_outputs", {}) or {}).items():
@@ -691,7 +745,7 @@ def create_workflow(
                 1,
                 context_budget.input_budget - estimate_tokens(static_prefix + static_suffix),
             )
-            context_text = context_assembler.render_for_prompt(
+            rendered = context_assembler.render_with_metadata(
                 prompt_packet,
                 memory=safe_memory,
                 tool_outputs=untrusted_outputs,
@@ -701,15 +755,15 @@ def create_workflow(
                 tenant_settings=state.get("tenant_settings", {}),
                 max_tokens=available_context_tokens,
             )
-            prompt = static_prefix + context_text + static_suffix
-            metadata = dict(state.get("context_metadata", {}) or {})
-            metadata["estimated_input_tokens"] = estimate_tokens(prompt)
-            metadata["budget_tokens"] = context_budget.input_budget
-            metadata["overflow_prevented"] = context_budget.within_hard_limit(metadata["estimated_input_tokens"])
-            # The final render is bounded by the budget; keep the flag
-            # explicit for observability and evaluation rather than silently
-            # hiding a truncation decision.
-            state["context_metadata"] = metadata
+            prompt, context_rejected = finalize_context_prompt(rendered, static_prefix, static_suffix)
+            if context_rejected:
+                state["answer_mode"] = "offline"
+                state["answer_reason"] = "context_overflow"
+                state["answer_confidence"] = "low"
+                state["answer_next_step"] = "new_conversation"
+                return append_safe_answer(
+                    state, "当前对话内容过长，建议新建会话后继续，我不会丢失你已经保存的历史记录。"
+                )
 
         try:
             tenant_settings = state.get("tenant_settings", {}) or {}

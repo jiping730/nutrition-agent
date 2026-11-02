@@ -205,7 +205,7 @@ async function streamAsk(question: string, conversationId: string | null, signal
       const grillPayload = payload.grill ?? event.grill;
       const normalizedGrill = normalizeGrill(grillPayload ?? (payload.question ? payload : null));
       if (normalizedGrill) handlers.onGrill(normalizedGrill);
-      if (type === 'context.compacted' || type === 'context.completed') {
+      if (type === 'context.compacted' || type === 'context.completed' || type === 'context.compaction.completed') {
         handlers.onContext?.(payload as Record<string, unknown>);
       }
       if (type === 'answer.completed' || type === 'done' || type === 'complete') {

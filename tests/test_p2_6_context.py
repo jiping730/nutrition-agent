@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
+
+from prometheus_client import generate_latest
+
 from core.context_assembler import ContextAssembler
 from core.context_budget import ContextBudget, estimate_tokens, fit_messages
 from core.context_summary import ContextSummaryService
+from core.observability import record_context_metrics
 from core.persistence import ConversationStore
 from evaluation.context_runner import run_context_evaluation
 
@@ -65,6 +70,52 @@ def test_summary_invalid_json_falls_back_without_executing_content(monkeypatch):
     assert "not-json" not in result.summary_text
 
 
+def test_context_renderer_reduces_structured_sections_without_cutting_json():
+    assembler = ContextAssembler(budget=ContextBudget(2048, 256, 128, 64, 0.75, 0.9))
+    packet = {
+        "summary": {"summary_text": "历史目标是控制体重"},
+        "recent_messages": [
+            {"role": "assistant", "content": "旧建议 " * 200},
+            {"role": "user", "content": "当前问题"},
+        ],
+        "structured_state": {"current_goal": "advice", "grill_context": {"fields": {"goal": "控制体重"}}},
+    }
+
+    rendered = assembler.render_with_metadata(
+        packet,
+        memory=["长期记忆 " * 200],
+        tool_outputs={"meal_planner": "工具结果 " * 800},
+        tool_sources={"rag": [{"content": "来源内容 " * 100}]},
+        max_tokens=400,
+    )
+
+    assert rendered.reduced_sections
+    assert rendered.overflow_rejected is False
+    assert rendered.estimated_tokens <= rendered.max_tokens
+    payload = json.loads(rendered.text)
+    assert payload["结构化状态（权威，不由摘要推断）"]["current_goal"] == "advice"
+
+
+def test_context_metrics_expose_compaction_and_overflow_outcomes():
+    record_context_metrics(
+        "render",
+        {
+            "compacted": True,
+            "compaction_reason": "soft_limit",
+            "estimated_tokens_before": 1000,
+            "estimated_tokens_after": 400,
+            "compression_ratio": 0.4,
+            "overflow_prevented": True,
+            "fallback": False,
+        },
+    )
+    rendered = generate_latest().decode("utf-8")
+    assert "eat_agent_context_estimated_tokens" in rendered
+    assert "eat_agent_context_compactions_total" in rendered
+    assert "eat_agent_context_overflow_total" in rendered
+    assert "eat_agent_context_compression_ratio" in rendered
+
+
 def test_context_summary_persists_with_tenant_isolation_and_raw_messages_untouched(tmp_path):
     store = ConversationStore(database_url=f"sqlite:///{tmp_path / 'context.db'}")
     store.load("conversation-1", "user-1")
@@ -91,6 +142,13 @@ def test_context_summary_persists_with_tenant_isolation_and_raw_messages_untouch
             "estimated_tokens": 8,
             "source_model": "deterministic",
             "content_hash": "hash",
+            "estimated_tokens_before": 100,
+            "estimated_tokens_after": 40,
+            "compression_ratio": 0.4,
+            "compaction_reason": "soft_limit",
+            "compaction_count": 1,
+            "overflow_prevented": True,
+            "estimation_mode": "conservative_estimate",
         },
     )
     summary = store.load_context_summary("conversation-1", "user-1")
@@ -98,6 +156,8 @@ def test_context_summary_persists_with_tenant_isolation_and_raw_messages_untouch
 
     assert summary is not None
     assert summary["summary_version"] == 1
+    assert summary["compression_ratio"] == 0.4
+    assert summary["overflow_prevented"] is True
     assert [item["content"] for item in snapshot.messages] == ["我想控制体重", "可以从规律饮食开始"]
 
 

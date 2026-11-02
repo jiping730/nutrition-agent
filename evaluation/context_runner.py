@@ -54,7 +54,7 @@ def run_context_evaluation(path: str | Path = CASE_PATH) -> dict[str, Any]:
                 user_id="context-eval-user",
             )
             estimated = int(preparation.metadata["estimated_input_tokens"])
-            budget_ok = estimated <= budget.input_budget
+            budget_ok = estimated <= budget.hard_limit
             summary_facts_ok = _contains_fact(case, preparation)
             state = preparation.packet.get("structured_state", {})
             actual_fields = ((state.get("grill_context") or {}).get("fields") or {}) if isinstance(state, dict) else {}
@@ -75,9 +75,13 @@ def run_context_evaluation(path: str | Path = CASE_PATH) -> dict[str, Any]:
                     "details": {
                         "estimated_input_tokens": estimated,
                         "budget_tokens": budget.input_budget,
+                        "hard_limit_tokens": budget.hard_limit,
                         "compacted": preparation.metadata.get("compacted", False),
                         "fallback": preparation.metadata.get("fallback", False),
                         "summary_version": preparation.metadata.get("summary_version", 0),
+                        "compression_ratio": preparation.metadata.get("compression_ratio", 1.0),
+                        "overflow_rejected": preparation.metadata.get("overflow_rejected", False),
+                        "estimation_mode": preparation.metadata.get("estimation_mode"),
                     },
                 }
             )
@@ -92,13 +96,23 @@ def run_context_evaluation(path: str | Path = CASE_PATH) -> dict[str, Any]:
         "context_compaction_success_rate": sum(item["checks"]["expected_compaction"] for item in results) / total,
         "summary_fact_retention_rate": sum(item["checks"]["summary_fact_retention"] for item in results) / total,
         "grill_state_retention_rate": sum(item["checks"]["grill_state_retention"] for item in results) / total,
+        "current_question_retention_rate": sum(item["checks"]["current_question_retained"] for item in results) / total,
         "context_overflow_rate": sum(not item["checks"]["budget_adherence"] for item in results) / total,
         "context_fallback_rate": sum(item["details"]["fallback"] for item in results) / total,
+        "context_overflow_rejection_rate": sum(item["details"]["overflow_rejected"] for item in results) / total,
     }
+    passed = (
+        all(item["passed"] for item in results)
+        and metrics["context_budget_adherence_rate"] == 1.0
+        and metrics["context_overflow_rate"] == 0.0
+        and metrics["current_question_retention_rate"] == 1.0
+        and metrics["summary_fact_retention_rate"] >= 0.95
+        and metrics["grill_state_retention_rate"] >= 0.99
+    )
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "metrics": metrics,
-        "passed": all(item["passed"] for item in results),
+        "passed": passed,
         "cases": results,
     }
 

@@ -17,8 +17,18 @@ from typing import Any, Iterable
 from config import settings
 
 
-def estimate_tokens(value: Any) -> int:
-    """Estimate tokens conservatively for Chinese, English, and mixed text."""
+def _safety_factor(value: float | None = None) -> float:
+    factor = settings.context_estimate_safety_factor if value is None else value
+    return min(2.0, max(1.0, float(factor)))
+
+
+def estimate_tokens(value: Any, *, safety_factor: float | None = None) -> int:
+    """Estimate tokens conservatively for Chinese, English, and mixed text.
+
+    This is deliberately labelled as an estimate.  It is not a provider
+    tokenizer; the safety factor makes the application budget conservative
+    when the configured model changes.
+    """
 
     text = str(value or "")
     if not text:
@@ -36,7 +46,7 @@ def estimate_tokens(value: Any) -> int:
             raw += 0.75
     # A small safety factor prevents the heuristic from being optimistic at
     # the exact boundary.  It is still much cheaper than a tokenizer package.
-    return max(1, math.ceil(raw * 1.12))
+    return max(1, math.ceil(raw * _safety_factor(safety_factor)))
 
 
 def estimate_messages(messages: Iterable[dict[str, Any]]) -> int:
@@ -62,7 +72,41 @@ def truncate_text_to_tokens(text: str, max_tokens: int) -> str:
             low = middle + 1
         else:
             high = middle - 1
-    return best + ("…" if best and len(best) < len(text) else "")
+    if best and len(best) < len(text) and estimate_tokens(best + "…") <= max_tokens:
+        return best + "…"
+    return best
+
+
+@dataclass(frozen=True)
+class ContextBudgetDecision:
+    """A serializable decision made by the conservative budget checker."""
+
+    estimated_tokens: int
+    budget_tokens: int
+    soft_limit_tokens: int
+    hard_limit_tokens: int
+    reason: str
+    estimation_mode: str = "conservative_estimate"
+
+    @property
+    def within_soft_limit(self) -> bool:
+        return self.estimated_tokens < self.soft_limit_tokens
+
+    @property
+    def within_hard_limit(self) -> bool:
+        return self.estimated_tokens <= self.hard_limit_tokens
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "estimated_tokens": self.estimated_tokens,
+            "budget_tokens": self.budget_tokens,
+            "soft_limit_tokens": self.soft_limit_tokens,
+            "hard_limit_tokens": self.hard_limit_tokens,
+            "reason": self.reason,
+            "estimation_mode": self.estimation_mode,
+            "within_soft_limit": self.within_soft_limit,
+            "within_hard_limit": self.within_hard_limit,
+        }
 
 
 @dataclass(frozen=True)
@@ -73,6 +117,9 @@ class ContextBudget:
     safety_margin_tokens: int
     soft_limit_ratio: float
     hard_limit_ratio: float
+    estimate_safety_factor: float = 1.15
+    precompact_ratio: float = 0.70
+    max_compaction_rounds: int = 3
 
     @property
     def input_budget(self) -> int:
@@ -86,14 +133,31 @@ class ContextBudget:
         return max(1, min(self.input_budget, int(self.window_tokens * self.soft_limit_ratio)))
 
     @property
+    def precompact_limit(self) -> int:
+        return max(1, min(self.input_budget, int(self.window_tokens * self.precompact_ratio)))
+
+    @property
     def hard_limit(self) -> int:
         return max(1, min(self.input_budget, int(self.window_tokens * self.hard_limit_ratio)))
 
     def should_compact(self, estimated_tokens: int, message_count: int = 0) -> bool:
-        return estimated_tokens >= self.soft_limit or message_count >= settings.context_compaction_batch_turns * 2
+        return (
+            estimated_tokens >= self.precompact_limit
+            or estimated_tokens >= self.soft_limit
+            or message_count >= settings.context_compaction_batch_turns * 2
+        )
 
     def within_hard_limit(self, estimated_tokens: int) -> bool:
         return estimated_tokens <= self.hard_limit
+
+    def decide(self, estimated_tokens: int, reason: str = "preflight") -> ContextBudgetDecision:
+        return ContextBudgetDecision(
+            estimated_tokens=max(0, int(estimated_tokens)),
+            budget_tokens=self.input_budget,
+            soft_limit_tokens=self.precompact_limit,
+            hard_limit_tokens=self.hard_limit,
+            reason=reason,
+        )
 
 
 def current_budget() -> ContextBudget:
@@ -102,8 +166,11 @@ def current_budget() -> ContextBudget:
         reserved_output_tokens=max(0, int(settings.context_reserved_output_tokens)),
         reserved_system_tokens=max(0, int(settings.context_reserved_system_tokens)),
         safety_margin_tokens=max(0, int(settings.context_safety_margin_tokens)),
+        estimate_safety_factor=min(2.0, max(1.0, float(settings.context_estimate_safety_factor))),
+        precompact_ratio=min(0.99, max(0.1, float(settings.context_precompact_ratio))),
         soft_limit_ratio=min(0.99, max(0.1, float(settings.context_soft_limit_ratio))),
         hard_limit_ratio=min(0.99, max(0.2, float(settings.context_hard_limit_ratio))),
+        max_compaction_rounds=max(1, int(settings.context_max_compaction_rounds)),
     )
 
 

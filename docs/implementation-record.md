@@ -1014,19 +1014,20 @@ P1-6/P2-3 浏览器回归：2 passed（真实 JWT 登录后访问知识库页面
 
 ### 25.1 实际落地内容
 
-- 新增 `core/context_budget.py`，以确定性估算控制输入预算、输出预留、系统提示预留和安全余量；当前用户问题始终优先保留。
+- 新增 `core/context_budget.py`，以带安全系数的保守估算控制输入预算、输出预留、系统提示预留和安全余量；当前用户问题始终优先保留，并明确标记为 `conservative_estimate`。
 - 新增 `core/context_summary.py`，支持结构化模型摘要；模型不可用、超时或返回非法 JSON 时自动降级为确定性摘要。
-- 新增 `core/context_assembler.py`，将历史摘要、最近对话、Grill 结构化状态、授权档案、记忆和工具/RAG 结果分层组装，并对后四类内容分别限长。
+- 新增 `core/context_assembler.py`，将历史摘要、最近对话、Grill 结构化状态、授权档案、记忆和工具/RAG 结果分层组装；超限时按优先级动态裁剪结构化字段，不直接截断最终 JSON。
 - `ConversationRuntime` 在 LangGraph 前准备上下文包，`core/workflow.py` 改为使用预算后的上下文生成 Prompt，不再固定使用 `messages[-5:]`。
-- 新增 `conversation_contexts` 和迁移 `0011_p2_6_context_compaction`，按会话、用户和租户保存摘要版本及覆盖到的消息 ID；原始消息不删除。
-- SSE 新增压缩状态事件；仅发生实际压缩时，React 前端提示“已整理较早对话，保留当前目标和最近内容”。
+- 新增 `conversation_contexts` 和迁移 `0011_p2_6_context_compaction`、`0012_context_budget_metadata`，按会话、用户和租户保存摘要版本、覆盖到的消息 ID、压缩率、压缩原因和硬限制结果；原始消息不删除。
+- SSE 新增调用前预检查、压缩开始/完成、溢出和 usage 状态事件；仅发生实际压缩时，React 前端提示“已整理较早对话，保留当前目标和最近内容”。
+- 在既有 `core/observability.py` 中新增上下文估算、压缩、溢出拦截、压缩率和摘要降级 Prometheus 指标，不使用用户或会话 ID 作为标签。
 
 ### 25.2 实际验收
 
 ```text
-上下文专项无模型测试：3 passed
-上下文确定性评测集：15 条，预算遵循率 1.00、摘要事实保留率 1.00、Grill 状态保留率 1.00、上下文溢出率 0.00
-Alembic 空 SQLite 迁移：0001 → 0011_p2_6_context_compaction 通过
+上下文专项测试：覆盖预算、动态结构化裁剪、指标、摘要降级和摘要持久化
+上下文确定性评测集：20 条，预算遵循率 1.00、当前问题保留率 1.00、摘要事实保留率 1.00、Grill 状态保留率 1.00、上下文溢出率 0.00
+Alembic 空 SQLite 迁移：0001 → 0012_context_budget_metadata 通过
 Ruff：通过
 Mypy（上下文新增模块）：通过
 前端 TypeScript：通过
@@ -1036,6 +1037,8 @@ Mypy（上下文新增模块）：通过
 当前工作树的 `data/` 和系统临时目录受宿主权限限制，无法在本机直接复现完整 pytest 临时目录流程；CI/Docker 使用可写数据库和临时目录后再执行完整回归门禁。
 
 当前仍有以下边界：
+
+- Token 计数是保守估算，不等同于模型 provider 返回的精确 usage；本阶段不接入模型专用 Tokenizer。
 
 - JWT 用户认证、Refresh Token 轮换和 Redis 共享协调已在 P04 落地；完整 RBAC、企业 SSO/OIDC 和更完整审计留存仍未接入。
 - CI 已增加自动检查，但 CD 发布、镜像签名、制品仓库和自动回滚仍需接入实际发布平台。
