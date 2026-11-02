@@ -48,6 +48,21 @@ export type Profile = {
   personalization_enabled: boolean;
 };
 export type ProfileSuggestion = { id: ID; field: keyof Profile; label: string; value: string; reason: string };
+export type MemoryItem = {
+  id: ID;
+  memory_type: string;
+  memory_key: string;
+  memory_value: unknown;
+  display_text: string;
+  status: 'proposed' | 'active' | 'rejected' | 'superseded' | 'expired';
+  confidence: number;
+  sensitivity: 'low' | 'high' | string;
+  source_conversation_id?: string | null;
+  source_excerpt?: string;
+  created_at?: string;
+  updated_at?: string;
+  expires_at?: string | null;
+};
 export type KnowledgeDocument = {
   id: ID;
   title: string;

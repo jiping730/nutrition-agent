@@ -39,8 +39,8 @@ def test_retrieval_response_keeps_empty_result_explicit():
 def test_model_route_contract_applies_safe_limits():
     request = ModelRouteRequest(
         task="answer",
-        preferred_model="glm-4-flash",
-        fallback_models=["glm-4-air"],
+        preferred_model="glm-5.3-flash",
+        fallback_models=["glm-5.3-flash-fallback"],
         max_tokens=1024,
         timeout_seconds=15,
     )

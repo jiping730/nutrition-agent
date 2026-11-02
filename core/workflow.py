@@ -174,7 +174,12 @@ def create_workflow(
                 query = state["messages"][-1]["content"]
                 try:
                     memories = memory_mgr.retrieve_relevant_memories(
-                        query, user_id=state["user_id"], tenant_id=state.get("tenant_id")
+                        query,
+                        user_id=state["user_id"],
+                        tenant_id=state.get("tenant_id"),
+                        current_goal=state.get("current_goal"),
+                        current_operation=state.get("current_operation"),
+                        request_intent=state.get("request_intent"),
                     )
                 except TypeError:
                     memories = memory_mgr.retrieve_relevant_memories(query, user_id=state["user_id"])

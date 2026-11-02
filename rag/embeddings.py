@@ -1,3 +1,6 @@
+from config import settings
+
+
 try:
     from langchain_community.embeddings import ZhipuAIEmbeddings
     _has_embeddings = True
@@ -6,8 +9,6 @@ except ImportError:
     from typing import List
 
     from langchain_core.embeddings import Embeddings  # 导入基类
-
-    from config import settings
 
     try:
         from zhipuai import ZhipuAI

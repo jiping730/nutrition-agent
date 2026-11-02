@@ -22,8 +22,9 @@ def test_gateway_uses_low_cost_intent_route_and_extracts_usage(monkeypatch):
         calls.append(kwargs)
         return _response()
 
-    monkeypatch.setattr(settings, "zhipuai_api_key", "test-key")
-    monkeypatch.setattr(settings, "llm_intent_model", "glm-4-flash")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_primary_provider", "anthropic")
+    monkeypatch.setattr(settings, "llm_intent_model", "glm-5.3-flash")
     monkeypatch.setattr(settings, "llm_max_tokens", 512)
     monkeypatch.setattr(settings, "llm_input_cost_per_1k", 1.0)
     monkeypatch.setattr(settings, "llm_output_cost_per_1k", 2.0)
@@ -31,11 +32,11 @@ def test_gateway_uses_low_cost_intent_route_and_extracts_usage(monkeypatch):
     result = ModelGateway(completion_fn=completion).complete("请帮我查热量", task="intent", user_id="user-1")
 
     assert result.content == "answer"
-    assert result.decision.model == "glm-4-flash"
+    assert result.decision.model == "glm-5.3-flash"
     assert result.decision.route == "primary"
     assert result.usage.total_tokens == 17
     assert result.cost == pytest.approx(0.022)
-    assert calls[0]["model"] == "openai/glm-4-flash"
+    assert calls[0]["model"] == "anthropic/glm-5.3-flash"
     assert calls[0]["max_tokens"] == 512
 
 
@@ -48,8 +49,11 @@ def test_gateway_retries_primary_then_switches_to_configured_fallback(monkeypatc
             raise TimeoutError("upstream timeout")
         return _response("fallback-answer")
 
-    monkeypatch.setattr(settings, "zhipuai_api_key", "test-key")
-    monkeypatch.setattr(settings, "llm_fallback_models", "glm-4-air")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_primary_provider", "anthropic")
+    monkeypatch.setattr(settings, "llm_fallback_provider", "anthropic")
+    monkeypatch.setattr(settings, "llm_model", "glm-5.3-flash")
+    monkeypatch.setattr(settings, "llm_fallback_models", "glm-5.3-flash-fallback")
     monkeypatch.setattr(settings, "llm_max_attempts", 2)
     monkeypatch.setattr(settings, "llm_retry_base_delay_ms", 0)
 
@@ -58,7 +62,11 @@ def test_gateway_retries_primary_then_switches_to_configured_fallback(monkeypatc
     assert result.content == "fallback-answer"
     assert result.decision.route == "fallback"
     assert result.decision.fallback_used is True
-    assert calls == ["openai/glm-4-flash", "openai/glm-4-flash", "openai/glm-4-air"]
+    assert calls == [
+        "anthropic/glm-5.3-flash",
+        "anthropic/glm-5.3-flash",
+        "anthropic/glm-5.3-flash-fallback",
+    ]
 
 
 def test_gateway_enforces_daily_token_budget_before_call(monkeypatch):
@@ -70,6 +78,7 @@ def test_gateway_enforces_daily_token_budget_before_call(monkeypatch):
         return _response()
 
     monkeypatch.setattr(settings, "zhipuai_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_primary_provider", "zhipuai")
     monkeypatch.setattr(settings, "llm_user_daily_token_limit", 5)
     monkeypatch.setattr(settings, "llm_max_tokens", 8)
     request = ModelRouteRequest(task="answer", max_tokens=8)

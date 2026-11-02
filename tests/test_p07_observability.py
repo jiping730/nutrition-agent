@@ -129,6 +129,7 @@ def test_llm_call_records_provider_usage_without_prompt_content(monkeypatch):
         chat = SimpleNamespace(completions=FakeCompletions())
 
     monkeypatch.setattr(settings, "zhipuai_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_model", "glm-5.3-flash")
     monkeypatch.setattr(settings, "llm_input_cost_per_1k", 1.0)
     monkeypatch.setattr(settings, "llm_output_cost_per_1k", 2.0)
     monkeypatch.setattr(llm_module, "ZhipuAI", lambda api_key: FakeClient())
@@ -137,6 +138,6 @@ def test_llm_call_records_provider_usage_without_prompt_content(monkeypatch):
 
     assert answer == "answer"
     rendered = generate_latest().decode("utf-8")
-    assert 'eat_agent_llm_tokens_total{direction="input",model="glm-4-flash"}' in rendered
-    assert 'eat_agent_llm_tokens_total{direction="output",model="glm-4-flash"}' in rendered
+    assert 'eat_agent_llm_tokens_total{direction="input",model="glm-5.3-flash"}' in rendered
+    assert 'eat_agent_llm_tokens_total{direction="output",model="glm-5.3-flash"}' in rendered
     assert "private prompt" not in rendered

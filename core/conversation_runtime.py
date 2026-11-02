@@ -613,9 +613,30 @@ class ConversationRuntime:
         record_grill_rounds(intent, int(grill_context.get("total_rounds", 0) or 0))
         if grill_action == "fallback":
             record_fallback("grill_fallback")
-        if grill_action not in {"clarify", "fallback", "pending_confirmation", "reject", "switch", "multi_task"}:
+        if grill_action in {"clarify", "fallback", "pending_confirmation", "reject", "switch", "multi_task"}:
+            remember_user_facts = getattr(self.memory_mgr, "remember_user_facts", None)
+            if callable(remember_user_facts):
+                try:
+                    remember_user_facts(
+                        question,
+                        user_id,
+                        tenant_id,
+                        conversation_id=conversation_id,
+                    )
+                except TypeError:
+                    remember_user_facts(question, user_id, tenant_id)
+        else:
             try:
-                self.memory_mgr.add_interaction(question, answer, user_id, tenant_id)
+                try:
+                    self.memory_mgr.add_interaction(
+                        question,
+                        answer,
+                        user_id,
+                        tenant_id,
+                        conversation_id=conversation_id,
+                    )
+                except TypeError:
+                    self.memory_mgr.add_interaction(question, answer, user_id, tenant_id)
             except TypeError:
                 self.memory_mgr.add_interaction(question, answer, user_id)
 

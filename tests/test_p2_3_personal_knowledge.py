@@ -110,7 +110,7 @@ def test_migrations_reach_p2_3_head(tmp_path: Path, monkeypatch):
         inspector = inspect(session.bind)
         document_columns = {item["name"] for item in inspector.get_columns("knowledge_documents")}
         assert {"scope", "owner_user_id", "deleted_at"}.issubset(document_columns)
-        assert "0012_context_budget_metadata" in {
+        assert "0013_structured_memory" in {
             row[0] for row in session.connection().exec_driver_sql("SELECT version_num FROM alembic_version").all()
         }
     store.engine.dispose()

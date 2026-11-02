@@ -141,6 +141,39 @@ class MemoryConsentRequest(BaseModel):
     granted: bool
 
 
+class MemoryItemUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memory_value: Any | None = None
+    display_text: str | None = Field(default=None, min_length=1, max_length=512)
+
+
+class MemoryItemResponse(BaseModel):
+    id: str
+    tenant_id: str
+    user_id: str
+    memory_type: str
+    memory_key: str
+    memory_value: Any
+    display_text: str
+    status: Literal["proposed", "active", "rejected", "superseded", "expired"]
+    confidence: float
+    sensitivity: str
+    source_conversation_id: str | None = None
+    source_message_id: int | None = None
+    source_excerpt: str = ""
+    valid_from: str
+    expires_at: str | None = None
+    superseded_by: str | None = None
+    content_hash: str
+    created_at: str
+    updated_at: str
+
+
+class MemoryItemListResponse(BaseModel):
+    items: list[MemoryItemResponse]
+
+
 class UserProfileUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

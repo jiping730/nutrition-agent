@@ -1,4 +1,4 @@
-import type { ApiTokens, Conversation, ExperienceSettings, GrillState, KnowledgeDocument, Message, NutritionEstimate, NutritionEstimateInput, Profile, ProfileSuggestion, User } from '../types';
+import type { ApiTokens, Conversation, ExperienceSettings, GrillState, KnowledgeDocument, MemoryItem, Message, NutritionEstimate, NutritionEstimateInput, Profile, ProfileSuggestion, User } from '../types';
 import { mockApi, mockStream } from './mock';
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '' : '/api');
@@ -127,6 +127,17 @@ function normalizeSuggestion(raw: any): ProfileSuggestion {
   const field = raw.field === 'disliked_foods' ? 'restrictions' : raw.field;
   const value = Array.isArray(raw.value) ? raw.value.join('、') : goalLabels[raw.value] ?? String(raw.value ?? '');
   return { ...raw, field, value } as ProfileSuggestion;
+}
+
+function normalizeMemoryItem(raw: any): MemoryItem {
+  return {
+    ...raw,
+    id: String(raw?.id ?? ''),
+    display_text: String(raw?.display_text ?? ''),
+    status: raw?.status ?? 'proposed',
+    confidence: Number(raw?.confidence ?? 0),
+    memory_value: raw?.memory_value,
+  } as MemoryItem;
 }
 
 function normalizeKnowledgeDocument(raw: any): KnowledgeDocument {
@@ -268,6 +279,11 @@ export const api = {
   updateProfile: (profile: Profile) => isMockMode ? mockApi.updateProfile(profile) : request<any>('/me/profile', { method: 'PUT', body: JSON.stringify(profilePayload(profile)) }).then(normalizeProfile),
   deleteProfile: () => isMockMode ? mockApi.updateProfile({ nickname: '', dietary_preferences: [], restrictions: [], allergies: [], memory_enabled: false, personalization_enabled: false }) : request('/me/profile', { method: 'DELETE' }),
   profileSuggestions: async () => isMockMode ? mockApi.profileSuggestions() : listData<any>(await request('/me/profile/suggestions')).map(normalizeSuggestion),
+  memoryItems: async () => isMockMode ? [] : listData<any>(await request('/memory/items')).map(normalizeMemoryItem),
+  confirmMemoryItem: (id: string) => isMockMode ? Promise.resolve(null) : request<MemoryItem>(`/memory/items/${id}/confirm`, { method: 'POST' }).then(normalizeMemoryItem),
+  rejectMemoryItem: (id: string) => isMockMode ? Promise.resolve(null) : request<MemoryItem>(`/memory/items/${id}/reject`, { method: 'POST' }).then(normalizeMemoryItem),
+  updateMemoryItem: (id: string, displayText: string) => isMockMode ? Promise.resolve(null) : request<MemoryItem>(`/memory/items/${id}`, { method: 'PATCH', body: JSON.stringify({ display_text: displayText }) }).then(normalizeMemoryItem),
+  deleteMemoryItem: (id: string) => isMockMode ? Promise.resolve(null) : request(`/memory/items/${id}`, { method: 'DELETE' }),
   documents: async () => isMockMode
     ? mockApi.documents()
     : listData<any>(await request('/me/knowledge/documents')).map(normalizeKnowledgeDocument),

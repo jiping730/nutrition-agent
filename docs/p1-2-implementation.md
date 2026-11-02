@@ -17,7 +17,7 @@
 
 - `intent` 任务默认使用 `LLM_INTENT_MODEL`，用于低置信度请求的补充分类。
 - `answer` 任务默认使用 `LLM_ANSWER_MODEL`，未配置时回退到 `LLM_MODEL`。
-- 通过 `LLM_FALLBACK_MODELS` 配置备用模型，例如 `glm-4-air,glm-4-flash`；主模型失败后按顺序尝试。
+- 通过 `LLM_FALLBACK_MODELS` 配置备用模型；主模型使用 `glm-5.3-flash`，失败后按配置顺序尝试备用路由。
 - 路由结果复用 `ModelRouteDecision`，包含 Provider、模型、主/备用路由、尝试次数和是否使用备用模型。
 
 ### 3. 超时、重试和降级

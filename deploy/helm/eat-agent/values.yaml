@@ -69,7 +69,7 @@ config:
   maxRequestBytes: "65536"
   rateLimitPerMinute: "120"
   logLevel: INFO
-  llmModel: glm-4-flash
+  llmModel: glm-5.3-flash
   embeddingModel: embedding-2
   autoCreateSchema: "false"
   strictSecurity: "true"

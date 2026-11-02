@@ -102,10 +102,12 @@ def test_tenant_settings_can_select_model_for_gateway(monkeypatch):
         }
 
     monkeypatch.setattr("utils.llm.settings.zhipuai_api_key", "test-key")
+    monkeypatch.setattr("utils.llm.settings.llm_primary_provider", "anthropic")
+    monkeypatch.setattr("utils.llm.settings.anthropic_api_key", "test-key")
     monkeypatch.setattr("utils.llm.settings.llm_max_attempts", 1)
     gateway = ModelGateway(completion_fn=completion)
-    llm = GatewayLLM(gateway, task="answer", user_id="user-1", preferred_model="glm-4-air")
+    llm = GatewayLLM(gateway, task="answer", user_id="user-1", preferred_model="glm-5.3-flash")
 
     assert llm.invoke("hello") == "ok"
-    assert calls[0]["model"] == "openai/glm-4-air"
+    assert calls[0]["model"] == "anthropic/glm-5.3-flash"
 

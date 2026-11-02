@@ -53,6 +53,9 @@ from front.schemas import (
     ExperienceSettingsUpdateRequest,
     LogoutRequest,
     MemoryConsentRequest,
+    MemoryItemListResponse,
+    MemoryItemResponse,
+    MemoryItemUpdateRequest,
     MessageFeedbackRequest,
     KnowledgeBuildRequest,
     KnowledgeDocumentListResponse,
@@ -598,6 +601,65 @@ def delete_memory(request: Request):
     deleted = runtime.memory_mgr.delete_user_memory(user_id, revoke_consent=True, tenant_id=tenant_id)
     log_event(logger, 20, "memory_deleted", user=fingerprint(user_id), record_count=deleted)
     return {"status": "deleted", "deleted_count": deleted, "consent": False}
+
+
+@app.get("/memory/items", response_model=MemoryItemListResponse)
+def list_memory_items(request: Request):
+    user_id = _platform_user_id(request)
+    tenant_id = _tenant_context(request, user_id).tenant_id
+    return {
+        "items": runtime.memory_mgr.list_memory_items(
+            user_id,
+            tenant_id=tenant_id,
+            statuses={"proposed", "active"},
+        )
+    }
+
+
+@app.post("/memory/items/{item_id}/confirm", response_model=MemoryItemResponse)
+def confirm_memory_item(item_id: str, request: Request):
+    user_id = _platform_user_id(request)
+    tenant_id = _tenant_context(request, user_id).tenant_id
+    item = runtime.memory_mgr.update_memory_item_status(user_id, item_id, "active", tenant_id)
+    if item is None:
+        raise KeyError("记忆条目不存在")
+    return item
+
+
+@app.post("/memory/items/{item_id}/reject", response_model=MemoryItemResponse)
+def reject_memory_item(item_id: str, request: Request):
+    user_id = _platform_user_id(request)
+    tenant_id = _tenant_context(request, user_id).tenant_id
+    item = runtime.memory_mgr.update_memory_item_status(user_id, item_id, "rejected", tenant_id)
+    if item is None:
+        raise KeyError("记忆条目不存在")
+    return item
+
+
+@app.patch("/memory/items/{item_id}", response_model=MemoryItemResponse)
+def edit_memory_item(item_id: str, data: MemoryItemUpdateRequest, request: Request):
+    user_id = _platform_user_id(request)
+    tenant_id = _tenant_context(request, user_id).tenant_id
+    item = runtime.memory_mgr.update_memory_item(
+        user_id,
+        item_id,
+        memory_value=data.memory_value if "memory_value" in data.model_fields_set else None,
+        display_text=data.display_text if "display_text" in data.model_fields_set else None,
+        tenant_id=tenant_id,
+    )
+    if item is None:
+        raise KeyError("记忆条目不存在")
+    return item
+
+
+@app.delete("/memory/items/{item_id}")
+def remove_memory_item(item_id: str, request: Request):
+    user_id = _platform_user_id(request)
+    tenant_id = _tenant_context(request, user_id).tenant_id
+    deleted = runtime.memory_mgr.delete_memory_item(user_id, item_id, tenant_id)
+    if not deleted:
+        raise KeyError("记忆条目不存在")
+    return {"status": "deleted", "id": item_id}
 
 
 @app.get("/me/profile", response_model=UserProfileResponse)

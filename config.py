@@ -24,13 +24,13 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = None
     tavily_api_key: Optional[str] = None
     embedding_model: str = "embedding-2"
-    llm_model: str = "glm-4-flash"
+    llm_model: str = "glm-5.3-flash"
     llm_primary_provider: str = "zhipuai"
     llm_fallback_provider: str = "zhipuai"
     llm_api_base: str = "https://open.bigmodel.cn/api/paas/v4"
     openai_api_base: str = "https://api.openai.com/v1"
     anthropic_api_base: str = "https://api.anthropic.com"
-    llm_intent_model: str = "glm-4-flash"
+    llm_intent_model: str = "glm-5.3-flash"
     llm_answer_model: Optional[str] = None
     llm_fallback_models: str = ""
     llm_intent_enabled: bool = True
@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     context_max_source_chunks: int = 5
     context_max_memory_items: int = 5
     context_max_single_result_chars: int = 3_000
+
+    # P2-7 结构化长期记忆。原始问答仍作为证据保存，只有结构化记忆参与默认召回。
+    memory_extraction_enabled: bool = True
+    memory_extraction_llm_enabled: bool = False
+    memory_auto_confirm_low_risk: bool = True
+    memory_retrieval_top_k: int = 5
+    memory_candidate_max_items: int = 8
+    memory_default_ttl_days: int = 0
 
     # P03 持久化与生产运行配置
     app_env: str = "development"

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 import threading
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -59,6 +61,21 @@ def _is_expired(value: datetime) -> bool:
 
 def conversation_expiry() -> datetime:
     return utc_now() + timedelta(days=max(1, settings.conversation_ttl_days))
+
+
+def _normalize_memory_value(value: Any) -> Any:
+    if isinstance(value, list):
+        return sorted({_normalize_memory_value(item) for item in value if str(item).strip()}, key=str)
+    if isinstance(value, dict):
+        return {str(key): _normalize_memory_value(item) for key, item in sorted(value.items())}
+    return str(value).strip().lower()
+
+
+def _memory_content_hash(memory_key: str, memory_value: Any) -> str:
+    payload = json.dumps(
+        {"key": memory_key, "value": _normalize_memory_value(memory_value)}, ensure_ascii=False, sort_keys=True
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class Base(DeclarativeBase):
@@ -264,6 +281,39 @@ class UserMemoryRecord(Base):
     assistant_output: Mapped[str] = mapped_column(Text, nullable=False)
     quality: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class MemoryItemRecord(Base):
+    """A structured, user-confirmable long-term memory item.
+
+    ``UserMemoryRecord`` remains as an auditable raw interaction archive.  This
+    table is the compact semantic layer used by the workflow for default
+    retrieval, so an assistant answer can never become a user fact by itself.
+    """
+
+    __tablename__ = "memory_items"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    memory_type: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    memory_key: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    memory_value: Mapped[Any] = mapped_column(JSON, nullable=False)
+    display_text: Mapped[str] = mapped_column(String(512), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="proposed")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    sensitivity: Mapped[str] = mapped_column(String(32), nullable=False, default="low")
+    source_conversation_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    source_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_excerpt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    superseded_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
 
 
 class UserProfileRecord(Base):
@@ -598,6 +648,7 @@ class ConversationStore:
                         "message_feedback",
                         "idempotency_records",
                         "user_memories",
+                        "memory_items",
                         "user_profile_events",
                         "memory_consents",
                         "user_profiles",
@@ -881,6 +932,12 @@ class ConversationStore:
                         UserMemoryRecord.user_id == user_id,
                     )
                 )
+                session.execute(
+                    delete(MemoryItemRecord).where(
+                        MemoryItemRecord.tenant_id == resolved_tenant_id,
+                        MemoryItemRecord.user_id == user_id,
+                    )
+                )
         return bool(granted)
 
     def save_memory(
@@ -943,6 +1000,7 @@ class ConversationStore:
             "user_id": user_id,
             "consent": self.get_memory_consent(user_id, resolved_tenant_id),
             "items": self.list_memory(user_id, tenant_id=resolved_tenant_id),
+            "structured_items": self.list_memory_items(user_id, tenant_id=resolved_tenant_id, include_all=True),
         }
 
     def delete_memory(self, user_id: str, *, revoke_consent: bool = True, tenant_id: str | None = None) -> int:
@@ -954,6 +1012,12 @@ class ConversationStore:
                 delete(UserMemoryRecord).where(
                     UserMemoryRecord.tenant_id == resolved_tenant_id,
                     UserMemoryRecord.user_id == user_id,
+                )
+            )
+            session.execute(
+                delete(MemoryItemRecord).where(
+                    MemoryItemRecord.tenant_id == resolved_tenant_id,
+                    MemoryItemRecord.user_id == user_id,
                 )
             )
             if revoke_consent:
@@ -968,6 +1032,207 @@ class ConversationStore:
                     record.granted = False
                     record.updated_at = utc_now()
             return int(result.rowcount or 0)
+
+    @staticmethod
+    def _memory_item_payload(record: MemoryItemRecord) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "tenant_id": record.tenant_id,
+            "user_id": record.user_id,
+            "memory_type": record.memory_type,
+            "memory_key": record.memory_key,
+            "memory_value": record.memory_value,
+            "display_text": record.display_text,
+            "status": record.status,
+            "confidence": record.confidence,
+            "sensitivity": record.sensitivity,
+            "source_conversation_id": record.source_conversation_id,
+            "source_message_id": record.source_message_id,
+            "source_excerpt": record.source_excerpt,
+            "valid_from": _as_utc(record.valid_from).isoformat(),
+            "expires_at": _as_utc(record.expires_at).isoformat() if record.expires_at else None,
+            "superseded_by": record.superseded_by,
+            "content_hash": record.content_hash,
+            "created_at": _as_utc(record.created_at).isoformat(),
+            "updated_at": _as_utc(record.updated_at).isoformat(),
+        }
+
+    def create_memory_item(
+        self,
+        *,
+        user_id: str,
+        memory_type: str,
+        memory_key: str,
+        memory_value: Any,
+        display_text: str,
+        status: str = "proposed",
+        confidence: float = 0.0,
+        sensitivity: str = "low",
+        source_conversation_id: str | None = None,
+        source_message_id: int | None = None,
+        source_excerpt: str = "",
+        valid_from: datetime | None = None,
+        expires_at: datetime | None = None,
+        superseded_by: str | None = None,
+        content_hash: str = "",
+        tenant_id: str | None = None,
+        item_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Create a structured item after consent has been granted."""
+
+        if status not in {"proposed", "active", "rejected", "superseded", "expired"}:
+            raise ValueError("记忆状态不合法")
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        with self.session_factory.begin() as session:
+            consent = session.get(MemoryConsentRecord, (resolved_tenant_id, user_id))
+            if consent is None or not consent.granted:
+                return None
+            now = valid_from or utc_now()
+            record = MemoryItemRecord(
+                id=item_id or str(uuid4()),
+                tenant_id=resolved_tenant_id,
+                user_id=user_id,
+                memory_type=memory_type,
+                memory_key=memory_key,
+                memory_value=memory_value,
+                display_text=display_text[:512],
+                status=status,
+                confidence=max(0.0, min(1.0, float(confidence))),
+                sensitivity=sensitivity,
+                source_conversation_id=source_conversation_id,
+                source_message_id=source_message_id,
+                source_excerpt=source_excerpt,
+                valid_from=now,
+                expires_at=expires_at,
+                superseded_by=superseded_by,
+                content_hash=content_hash,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(record)
+            session.flush()
+            return self._memory_item_payload(record)
+
+    def list_memory_items(
+        self,
+        user_id: str,
+        *,
+        limit: int = 100,
+        tenant_id: str | None = None,
+        statuses: set[str] | None = None,
+        include_all: bool = False,
+    ) -> list[dict[str, Any]]:
+        """List only the requesting user's structured memory items."""
+
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        with self.session_factory() as session:
+            query = select(MemoryItemRecord).where(
+                MemoryItemRecord.tenant_id == resolved_tenant_id,
+                MemoryItemRecord.user_id == user_id,
+            )
+            if statuses:
+                query = query.where(MemoryItemRecord.status.in_(sorted(statuses)))
+            elif not include_all:
+                query = query.where(MemoryItemRecord.status.in_(["proposed", "active"]))
+            records = session.scalars(
+                query.order_by(MemoryItemRecord.updated_at.desc(), MemoryItemRecord.created_at.desc()).limit(
+                    max(1, min(limit, 1_000))
+                )
+            ).all()
+            now = utc_now()
+            payloads: list[dict[str, Any]] = []
+            expired_ids: list[str] = []
+            for record in records:
+                if record.expires_at and _is_expired(record.expires_at) and record.status in {"active", "proposed"}:
+                    record.status = "expired"
+                    record.updated_at = now
+                    expired_ids.append(record.id)
+                if include_all or not record.expires_at or not _is_expired(record.expires_at):
+                    payloads.append(self._memory_item_payload(record))
+            if expired_ids:
+                session.commit()
+            return payloads
+
+    def get_memory_item(self, user_id: str, item_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        with self.session_factory() as session:
+            record = session.scalar(
+                select(MemoryItemRecord).where(
+                    MemoryItemRecord.id == item_id,
+                    MemoryItemRecord.tenant_id == resolved_tenant_id,
+                    MemoryItemRecord.user_id == user_id,
+                )
+            )
+            return self._memory_item_payload(record) if record else None
+
+    def update_memory_item_status(
+        self,
+        user_id: str,
+        item_id: str,
+        status: str,
+        tenant_id: str | None = None,
+        superseded_by: str | None = None,
+    ) -> dict[str, Any] | None:
+        if status not in {"proposed", "active", "rejected", "superseded", "expired"}:
+            raise ValueError("记忆状态不合法")
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        with self.session_factory.begin() as session:
+            record = session.scalar(
+                select(MemoryItemRecord).where(
+                    MemoryItemRecord.id == item_id,
+                    MemoryItemRecord.tenant_id == resolved_tenant_id,
+                    MemoryItemRecord.user_id == user_id,
+                )
+            )
+            if record is None:
+                return None
+            record.status = status
+            if superseded_by is not None:
+                record.superseded_by = superseded_by
+            record.updated_at = utc_now()
+            session.flush()
+            return self._memory_item_payload(record)
+
+    def update_memory_item(
+        self,
+        user_id: str,
+        item_id: str,
+        *,
+        memory_value: Any | None = None,
+        display_text: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        with self.session_factory.begin() as session:
+            record = session.scalar(
+                select(MemoryItemRecord).where(
+                    MemoryItemRecord.id == item_id,
+                    MemoryItemRecord.tenant_id == resolved_tenant_id,
+                    MemoryItemRecord.user_id == user_id,
+                )
+            )
+            if record is None:
+                return None
+            if memory_value is not None:
+                record.memory_value = memory_value
+                record.content_hash = _memory_content_hash(record.memory_key, memory_value)
+            if display_text is not None:
+                record.display_text = display_text[:512]
+            record.updated_at = utc_now()
+            session.flush()
+            return self._memory_item_payload(record)
+
+    def delete_memory_item(self, user_id: str, item_id: str, tenant_id: str | None = None) -> bool:
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        with self.session_factory.begin() as session:
+            result = session.execute(
+                delete(MemoryItemRecord).where(
+                    MemoryItemRecord.id == item_id,
+                    MemoryItemRecord.tenant_id == resolved_tenant_id,
+                    MemoryItemRecord.user_id == user_id,
+                )
+            )
+            return bool(result.rowcount)
 
     @staticmethod
     def _profile_payload(record: UserProfileRecord) -> dict[str, Any]:

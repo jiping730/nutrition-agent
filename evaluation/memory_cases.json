@@ -1,0 +1,22 @@
+[
+  {"case_id": "memory-001", "text": "我对花生过敏", "expected_keys": ["allergies"], "expected_values": ["花生"], "high_risk": true},
+  {"case_id": "memory-002", "text": "没有任何过敏", "expected_keys": [], "expected_values": []},
+  {"case_id": "memory-003", "text": "我不吃香菜", "expected_keys": ["disliked_foods"], "expected_values": ["香菜"]},
+  {"case_id": "memory-004", "text": "我不喜欢吃芹菜和苦瓜", "expected_keys": ["disliked_foods"], "expected_values": ["芹菜", "苦瓜"]},
+  {"case_id": "memory-005", "text": "我喜欢清淡饮食", "expected_keys": ["dietary_preferences"], "expected_values": ["清淡"]},
+  {"case_id": "memory-006", "text": "我偏好低糖、少油的吃法", "expected_keys": ["dietary_preferences"], "expected_values": ["低糖", "少油"]},
+  {"case_id": "memory-007", "text": "我想减肥", "expected_keys": ["health_goal"], "expected_values": ["weight_control"], "high_risk": true},
+  {"case_id": "memory-008", "text": "我的目标是增肌", "expected_keys": ["health_goal"], "expected_values": ["muscle_gain"], "high_risk": true},
+  {"case_id": "memory-009", "text": "我希望均衡饮食", "expected_keys": ["health_goal"], "expected_values": ["balanced_diet"], "high_risk": true},
+  {"case_id": "memory-010", "text": "我不想计算热量", "expected_keys": ["calorie_tracking_preference"], "expected_values": ["avoid"]},
+  {"case_id": "memory-011", "text": "我愿意记录卡路里", "expected_keys": ["calorie_tracking_preference"], "expected_values": ["welcomes"]},
+  {"case_id": "memory-012", "text": "家里只有电饭煲", "expected_keys": ["cooking_equipment"], "expected_values": ["电饭煲"]},
+  {"case_id": "memory-013", "text": "我通常用空气炸锅做饭", "expected_keys": ["cooking_equipment"], "expected_values": ["空气炸锅"]},
+  {"case_id": "memory-014", "text": "我每周运动三次", "expected_keys": ["activity_level"], "expected_values": ["每周运动3次"]},
+  {"case_id": "memory-015", "text": "我每天吃三顿", "expected_keys": ["meal_schedule"], "expected_values": ["每天3顿"]},
+  {"case_id": "memory-016", "text": "这周暂时不吃辣", "expected_keys": ["disliked_foods"], "expected_values": ["辣"], "temporal_scope": "short_term"},
+  {"case_id": "memory-017", "text": "我对虾和牛奶都不耐受", "expected_keys": ["allergies"], "expected_values": ["虾", "牛奶"], "high_risk": true},
+  {"case_id": "memory-018", "text": "我不吃香菜、葱和蒜", "expected_keys": ["disliked_foods"], "expected_values": ["香菜", "葱", "蒜"]},
+  {"case_id": "memory-019", "text": "今天晚餐吃什么？", "expected_keys": [], "expected_values": []},
+  {"case_id": "memory-020", "text": "建议我多喝水并少吃油炸食品", "expected_keys": [], "expected_values": []}
+]
