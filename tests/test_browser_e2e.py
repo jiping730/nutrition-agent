@@ -41,6 +41,10 @@ def test_react_frontend_auth_navigation_and_chat():
         question.fill("我想减肥")
         page.get_by_role("button", name="发送问题").click()
         page.get_by_text("我想减肥", exact=True).wait_for(timeout=30000)
+        # Let the SSE request finish before navigating away.  Otherwise the
+        # abandoned stream can still hold the SQLite write transaction while
+        # the profile page loads its memory settings in parallel.
+        page.get_by_role("button", name="停止生成").wait_for(state="detached", timeout=30000)
         assert page.get_by_text("回答未完成").count() == 0
         assert page.get_by_text("哪一餐", exact=False).count() == 0
 

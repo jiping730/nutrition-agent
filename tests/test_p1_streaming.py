@@ -87,8 +87,10 @@ def test_runtime_stream_persists_final_response_and_emits_completion(tmp_path):
 
     assert [event["event"] for event in events] == [
         "conversation.started",
+        "context.preflight",
         "model.started",
         "model.delta",
+        "context.usage",
         "answer.completed",
         "conversation.completed",
     ]

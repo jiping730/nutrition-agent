@@ -92,6 +92,7 @@ export function ChatPage() {
   useEffect(() => {
     if (initialPrompt && !startedRef.current) { startedRef.current = true; void startAsk(initialPrompt); }
   }, [initialPrompt, startAsk]);
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   const newChat = () => { abortRef.current?.abort(); setHistoryOpen(false); navigate('/chat'); setMessages([]); setInput(''); setError(''); };
   const selectChat = (id: string) => { setHistoryOpen(false); navigate(`/chat/${id}`); };

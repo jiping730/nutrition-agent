@@ -7,21 +7,21 @@ not erase an in-progress conversation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import threading
-from typing import Any
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
     ForeignKey,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -32,6 +32,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -1232,7 +1233,7 @@ class ConversationStore:
                     MemoryItemRecord.user_id == user_id,
                 )
             )
-            return bool(result.rowcount)
+            return bool(cast(CursorResult[Any], result).rowcount)
 
     @staticmethod
     def _profile_payload(record: UserProfileRecord) -> dict[str, Any]:

@@ -20,8 +20,8 @@ from core.memory import MemoryManager
 from core.observability import (
     bind_observation_context,
     new_trace_id,
-    record_conversation,
     record_context_metrics,
+    record_conversation,
     record_fallback,
     record_grill_decision,
     record_grill_rounds,
