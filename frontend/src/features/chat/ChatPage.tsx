@@ -61,20 +61,24 @@ export function ChatPage() {
     setInput(''); setError(''); setGrill(null); setGenerating(true); setStreaming(''); streamingRef.current = ''; finishedRef.current = false;
     if (appendUser) setMessages((items) => [...items, { id: crypto.randomUUID(), role: 'user', content: text }]);
     const controller = new AbortController(); abortRef.current = controller;
+    let createdConversationId: string | null = null;
     try {
       let id = currentId;
       if (!id) {
         const conversation = await api.createConversation(text.slice(0, 24)); id = conversation.id; setCurrentId(id);
+        createdConversationId = id;
         history.setData((history.data || []).some((item) => item.id === id) ? history.data : [conversation, ...(history.data || [])]);
       }
       await api.askStream(text, id, controller.signal, {
         onToken: (token) => { streamingRef.current += token; setStreaming(streamingRef.current); },
         onGrill: (state) => setGrill(state),
+        onContext: (metadata) => { if (metadata.compacted) toast('已整理较早对话，保留当前目标和最近内容'); },
         onDone: (message) => {
           if (finishedRef.current) return; finishedRef.current = true;
           const content = message?.content || streamingRef.current;
           if (content) setMessages((items) => [...items, { id: message?.id || crypto.randomUUID(), role: 'assistant', content, kind: message?.kind || inferKind(text, content) }]);
           setStreaming(''); setGenerating(false);
+          if (createdConversationId) navigate(`/chat/${createdConversationId}`, { replace: true });
         },
       });
     } catch (reason) {
@@ -84,7 +88,7 @@ export function ChatPage() {
       } else setError(reason instanceof Error ? reason.message : '生成失败，请重试');
       setGenerating(false);
     } finally { abortRef.current = null; }
-  }, [currentId, generating, history, toast]);
+  }, [currentId, generating, history, navigate, toast]);
   useEffect(() => {
     if (initialPrompt && !startedRef.current) { startedRef.current = true; void startAsk(initialPrompt); }
   }, [initialPrompt, startAsk]);

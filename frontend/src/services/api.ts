@@ -169,6 +169,7 @@ export type StreamHandlers = {
   onToken: (text: string) => void;
   onGrill: (state: GrillState) => void;
   onDone: (message?: Message) => void;
+  onContext?: (metadata: Record<string, unknown>) => void;
 };
 
 async function streamAsk(question: string, conversationId: string | null, signal: AbortSignal, handlers: StreamHandlers) {
@@ -204,6 +205,9 @@ async function streamAsk(question: string, conversationId: string | null, signal
       const grillPayload = payload.grill ?? event.grill;
       const normalizedGrill = normalizeGrill(grillPayload ?? (payload.question ? payload : null));
       if (normalizedGrill) handlers.onGrill(normalizedGrill);
+      if (type === 'context.compacted' || type === 'context.completed') {
+        handlers.onContext?.(payload as Record<string, unknown>);
+      }
       if (type === 'answer.completed' || type === 'done' || type === 'complete') {
         handlers.onDone(normalizeMessage(payload.message ?? payload));
       }

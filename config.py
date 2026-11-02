@@ -41,6 +41,22 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4096
     llm_user_daily_token_limit: int = 0
     llm_user_daily_cost_limit: float = 0.0
+    # P2-6 会话上下文管理。预算只约束发给模型的上下文，不删除原始消息。
+    context_compaction_enabled: bool = True
+    context_window_tokens: int = 32768
+    context_reserved_output_tokens: int = 4096
+    context_reserved_system_tokens: int = 4096
+    context_safety_margin_tokens: int = 1024
+    context_soft_limit_ratio: float = 0.75
+    context_hard_limit_ratio: float = 0.90
+    context_recent_turns: int = 6
+    context_summary_max_tokens: int = 1200
+    context_compaction_batch_turns: int = 8
+    context_summary_model: Optional[str] = None
+    context_max_tool_chars: int = 12_000
+    context_max_source_chunks: int = 5
+    context_max_memory_items: int = 5
+    context_max_single_result_chars: int = 3_000
 
     # P03 持久化与生产运行配置
     app_env: str = "development"

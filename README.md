@@ -19,6 +19,7 @@
 - **统一 Agent 主链路**：CLI、API 和 Web 都通过同一个 ConversationRuntime → LangGraph Workflow 执行。
 - **通用追问引擎 Grill**：按任务画像定义必需字段、字段校验和确认门禁，避免信息不完整时过早执行。
 - **本地 Agentic RAG**：FAISS 向量召回与词法召回融合，支持查询改写、确定性重排、权限过滤和来源追溯。
+- **长对话上下文治理**：按 Token 预算保留当前问题、Grill 状态和最近对话，自动生成持久化摘要，工具/RAG 结果超长时独立截断。
 - **单端口 Web 应用**：FastAPI 提供 API，并托管移动端优先的 React 前端，生产访问统一使用 5000 端口。
 - **小型平台边界**：支持 JWT、会话持久化、基础多租户、个人档案、个人知识库和 Docker Compose；不以万人级分布式平台为目标。
 
@@ -30,7 +31,7 @@
 | Grill 追问 | 任务画像、字段类型与依赖、否定/拒答识别、换题、多任务顺序队列、确认后执行、结构化决策输出 |
 | RAG | 文档清洗与版本化入库、FAISS + 词法多路召回、查询改写、轻量确定性重排、来源与证据片段追溯 |
 | 模型与工具 | LiteLLM 模型网关、智谱兼容中转站、超时/重试/预算、MCP 本地工具、工具权限与审计 |
-| 平台能力 | FastAPI、JWT/API Key、会话与用户隔离、基础租户角色、个人档案、个人知识库、SSE 流式对话 |
+| 平台能力 | FastAPI、JWT/API Key、会话与用户隔离、基础租户角色、个人档案、个人知识库、SSE 流式对话、长上下文自动压缩 |
 | 质量保障 | 82 条确定性评测用例、RAG/Grill/安全指标、pytest 覆盖率门禁、Ruff/Black/isort/Mypy、Playwright E2E、Helm 静态校验 |
 
 ## 产品体验
@@ -89,7 +90,8 @@ Grill 检查任务字段
 ~~~mermaid
 flowchart LR
     U[Web / CLI / API] --> R[ConversationRuntime]
-    R --> W[LangGraph Workflow]
+    R --> X[Context Budget<br/>摘要与压缩]
+    X --> W[LangGraph Workflow]
     W --> I[Intent Router]
     W --> M[Memory & Profile]
     W --> G[Grill Engine<br/>信息完整性与追问]

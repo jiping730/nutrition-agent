@@ -155,6 +155,30 @@ class ConversationRecord(Base):
     )
 
 
+class ConversationContextRecord(Base):
+    """Persisted model-context summary; raw messages remain authoritative."""
+
+    __tablename__ = "conversation_contexts"
+
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), primary_key=True
+    )
+    tenant_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    user_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    summary_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    summary_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    covered_until_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source_model: Mapped[str] = mapped_column(String(128), default="deterministic", nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    fallback: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
 class MessageRecord(Base):
     __tablename__ = "messages"
 
@@ -1384,7 +1408,89 @@ class ConversationStore:
             )
             session.execute(delete(MessageRecord).where(MessageRecord.conversation_id == conversation_id))
             session.execute(delete(IdempotencyRecord).where(IdempotencyRecord.conversation_id == conversation_id))
+            session.execute(delete(ConversationContextRecord).where(ConversationContextRecord.conversation_id == conversation_id))
             session.delete(conversation)
+
+    def load_context_summary(
+        self, conversation_id: str, user_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Load the bounded-context summary after enforcing conversation ownership."""
+
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        with self.session_factory() as session:
+            conversation = session.scalar(
+                select(ConversationRecord).where(
+                    ConversationRecord.id == conversation_id,
+                    ConversationRecord.tenant_id == resolved_tenant_id,
+                    ConversationRecord.user_id == user_id,
+                )
+            )
+            if conversation is None:
+                if session.get(ConversationRecord, conversation_id) is not None:
+                    raise ConversationAccessError("无权访问该会话")
+                return None
+            record = session.get(ConversationContextRecord, conversation_id)
+            if record is None:
+                return None
+            return {
+                "conversation_id": record.conversation_id,
+                "tenant_id": record.tenant_id,
+                "user_id": record.user_id,
+                "summary_json": dict(record.summary_json or {}),
+                "summary_text": record.summary_text,
+                "summary_version": record.summary_version,
+                "covered_until_message_id": record.covered_until_message_id,
+                "estimated_tokens": record.estimated_tokens,
+                "source_model": record.source_model,
+                "content_hash": record.content_hash,
+                "fallback": record.fallback,
+                "created_at": _as_utc(record.created_at).isoformat(),
+                "updated_at": _as_utc(record.updated_at).isoformat(),
+            }
+
+    def save_context_summary(
+        self,
+        *,
+        conversation_id: str,
+        user_id: str,
+        tenant_id: str | None,
+        payload: dict[str, Any],
+    ) -> None:
+        """Upsert one summary version; raw messages are intentionally untouched."""
+
+        resolved_tenant_id = self._scope_tenant(user_id, tenant_id)
+        now = utc_now()
+        with self.session_factory.begin() as session:
+            conversation = session.scalar(
+                select(ConversationRecord).where(
+                    ConversationRecord.id == conversation_id,
+                    ConversationRecord.tenant_id == resolved_tenant_id,
+                    ConversationRecord.user_id == user_id,
+                )
+            )
+            if conversation is None:
+                if session.get(ConversationRecord, conversation_id) is not None:
+                    raise ConversationAccessError("无权访问该会话")
+                raise KeyError("会话不存在")
+            record = session.get(ConversationContextRecord, conversation_id)
+            values = {
+                "tenant_id": resolved_tenant_id,
+                "user_id": user_id,
+                "summary_json": dict(payload.get("summary_json", {})),
+                "summary_text": str(payload.get("summary_text", "")),
+                "summary_version": int(payload.get("summary_version", 1) or 1),
+                "covered_until_message_id": payload.get("covered_until_message_id"),
+                "estimated_tokens": int(payload.get("estimated_tokens", 0) or 0),
+                "source_model": str(payload.get("source_model", "deterministic"))[:128],
+                "content_hash": str(payload.get("content_hash", ""))[:128],
+                "fallback": bool(payload.get("fallback", False)),
+            }
+            if record is None:
+                session.add(ConversationContextRecord(conversation_id=conversation_id, created_at=now, updated_at=now, **values))
+            else:
+                for key, value in values.items():
+                    setattr(record, key, value)
+                record.updated_at = now
 
     def get_idempotent_response(
         self, conversation_id: str, user_id: str, request_id: str, tenant_id: str | None = None

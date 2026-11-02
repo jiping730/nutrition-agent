@@ -95,6 +95,19 @@ FRONTEND_PUBLIC_PATHS = {
     "/knowledge",
 }
 
+_FRONTEND_MEDIA_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".mjs": "application/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".webp": "image/webp",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".ico": "image/x-icon",
+}
+
 origins = settings.cors_origin_list()
 app.add_middleware(
     CORSMiddleware,
@@ -1019,7 +1032,7 @@ def frontend(path: str):
         return JSONResponse(status_code=404, content={"error": "资源不存在", "error_code": "not_found"})
 
     if requested.is_file():
-        return FileResponse(requested)
+        return FileResponse(requested, media_type=_FRONTEND_MEDIA_TYPES.get(requested.suffix.lower()))
     return FileResponse(FRONTEND_INDEX_FILE)
 
 

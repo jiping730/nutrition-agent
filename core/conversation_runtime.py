@@ -11,6 +11,8 @@ from queue import Queue
 from typing import Any, Callable, Iterator
 
 from config import settings
+from core.context_assembler import ContextAssembler
+from core.context_summary import ContextSummaryService
 from core.grill_engine import GrillContext, GrillEngine, get_profile
 from core.logging_config import configure_logging, fingerprint, log_event
 from core.mcp_gateway import McpGatewayError, McpServerRegistry, McpToolGateway
@@ -59,6 +61,7 @@ class ConversationResponse:
     reason: str = ""
     confidence: str = ""
     next_step: str = ""
+    context: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,6 +85,7 @@ class ConversationResponse:
             "reason": self.reason,
             "confidence": self.confidence,
             "next_step": self.next_step,
+            "context": self.context,
         }
 
     @classmethod
@@ -107,6 +111,7 @@ class ConversationResponse:
             reason=str(payload.get("reason", "")),
             confidence=str(payload.get("confidence", "")),
             next_step=str(payload.get("next_step", "")),
+            context=dict(payload.get("context", {})),
         )
 
 
@@ -155,6 +160,8 @@ class ConversationRuntime:
         self._locks: defaultdict[str, threading.RLock] = defaultdict(threading.RLock)
         self.coordinator = RedisCoordinator()
         self.grill_engine = GrillEngine()
+        self.context_summary_service = ContextSummaryService()
+        self.context_assembler = ContextAssembler(summary_service=self.context_summary_service)
 
     @staticmethod
     def _model_info(tenant_settings: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -485,7 +492,7 @@ class ConversationRuntime:
     ) -> ConversationResponse:
         if cancel_event is not None and cancel_event.is_set():
             raise StreamCancelled("stream cancelled by client")
-        snapshot = self.store.load(conversation_id, user_id, tenant_id=tenant_id)
+        snapshot = self.store.load(conversation_id, user_id, include_metadata=True, tenant_id=tenant_id)
         profile_context = self.profile_service.workflow_context(user_id, tenant_id)
         tenant_settings = self.store.get_tenant_settings(tenant_id) if tenant_id else {}
         input_safety = SafetyGuard.inspect_user_input(question)
@@ -499,8 +506,31 @@ class ConversationRuntime:
         for message in history:
             safe_content, _ = SafetyGuard.redact(str(message.get("content", "")))
             safe_history.append({**message, "content": safe_content})
+        existing_summary = self.store.load_context_summary(conversation_id, user_id, tenant_id)
+        structured_state = {
+            "current_goal": snapshot.current_goal or "",
+            "grill_context": snapshot.grill_context or {},
+        }
+        preparation = self.context_assembler.prepare(
+            safe_history,
+            user_message,
+            existing_summary=existing_summary,
+            structured_state=structured_state,
+            user_id=user_id,
+        )
+        if preparation.summary_record is not None:
+            self.store.save_context_summary(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                payload=preparation.summary_record,
+            )
+        if stream_emit is not None:
+            if preparation.metadata.get("compacted"):
+                stream_emit("context.started", preparation.metadata)
+                stream_emit("context.compacted", preparation.metadata)
         initial_state: dict[str, Any] = {
-            "messages": [*safe_history, user_message],
+            "messages": preparation.recent_messages,
             "user_id": user_id,
             "tenant_id": tenant_id,
             "tenant_settings": tenant_settings,
@@ -526,6 +556,9 @@ class ConversationRuntime:
                 user_id=user_id,
                 tenant_id=self.store.resolve_tenant_id(user_id, tenant_id),
             ),
+            "context_summary": preparation.summary,
+            "context_packet": preparation.packet,
+            "context_metadata": preparation.metadata,
         }
         if stream_emit is not None:
             initial_state["stream_emit"] = stream_emit
@@ -621,6 +654,7 @@ class ConversationRuntime:
             reason=str(final_state.get("answer_reason", "")),
             confidence=str(final_state.get("answer_confidence", "")),
             next_step=str(final_state.get("answer_next_step", "")),
+            context=dict(final_state.get("context_metadata", preparation.metadata) or {}),
         )
 
         message_id = self.store.save_turn(
@@ -654,6 +688,9 @@ class ConversationRuntime:
             response_payload=response.to_dict(),
             tenant_id=tenant_id,
         )
+
+        if stream_emit is not None and response.context.get("compacted"):
+            stream_emit("context.completed", response.context)
 
         record_conversation(response_type, grill_action or "none", elapsed)
         record_langfuse_trace(

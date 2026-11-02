@@ -8,6 +8,7 @@ import json
 import os
 import re
 import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -219,7 +220,12 @@ def _ingest_built_documents(
         "documents": [{"page_content": document.page_content, "metadata": document.metadata} for document in documents],
     }
     versions_dir = index_dir / "versions"
-    temporary_dir = Path(tempfile.mkdtemp(prefix=f".{version}.", dir=versions_dir))
+    # On Windows workspaces with restrictive ACLs, tempfile.mkdtemp may create
+    # a directory that rejects files created inside it.  Create the directory
+    # through pathlib so it inherits the workspace ACL, while retaining the
+    # same atomic directory swap.
+    temporary_dir = versions_dir / f"tmp-{version}-{uuid.uuid4().hex[:8]}"
+    temporary_dir.mkdir(parents=False, exist_ok=False)
     try:
         _write_json_atomic(temporary_dir / "manifest.json", {**manifest, "version": version})
         _write_json_atomic(temporary_dir / "corpus.json", corpus)

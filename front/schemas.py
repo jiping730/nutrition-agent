@@ -203,6 +203,7 @@ class AskResponse(BaseModel):
     reason: str = ""
     confidence: str = ""
     next_step: str = ""
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProfileSuggestionListResponse(BaseModel):

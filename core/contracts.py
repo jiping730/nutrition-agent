@@ -82,6 +82,9 @@ class ModelRouteDecision(ContractModel):
 
 StreamEventName = Literal[
     "conversation.started",
+    "context.started",
+    "context.compacted",
+    "context.completed",
     "model.started",
     "model.delta",
     "grill.clarify",

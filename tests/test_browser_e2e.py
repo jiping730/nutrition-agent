@@ -9,6 +9,14 @@ if os.getenv("RUN_BROWSER_E2E") != "1":
 playwright = pytest.importorskip("playwright.sync_api")
 
 
+def launch_browser(playwright_api):
+    options: dict[str, object] = {"headless": True}
+    executable_path = os.getenv("E2E_BROWSER_EXECUTABLE_PATH")
+    if executable_path:
+        options["executable_path"] = executable_path
+    return playwright_api.chromium.launch(**options)
+
+
 def register(page, prefix: str) -> str:
     username = f"{prefix}-{uuid.uuid4().hex[:10]}"
     page.goto(os.getenv("E2E_BASE_URL", "http://127.0.0.1:5000"), wait_until="domcontentloaded")
@@ -23,7 +31,7 @@ def register(page, prefix: str) -> str:
 @pytest.mark.e2e
 def test_react_frontend_auth_navigation_and_chat():
     with playwright.sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_browser(p)
         page = browser.new_page(viewport={"width": 390, "height": 844})
         register(page, "react-chat")
 
@@ -48,7 +56,7 @@ def test_react_frontend_auth_navigation_and_chat():
 @pytest.mark.e2e
 def test_react_frontend_personal_knowledge_flow():
     with playwright.sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_browser(p)
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         register(page, "react-knowledge")
         page.get_by_role("link", name="个人知识库").click()
@@ -64,4 +72,29 @@ def test_react_frontend_personal_knowledge_flow():
         page.get_by_label("检索关键词").fill("高纤维")
         page.get_by_role("button", name="查找").click()
         page.get_by_text(title, exact=True).last.wait_for()
+        browser.close()
+
+
+@pytest.mark.e2e
+def test_long_conversation_survives_context_compaction():
+    """The UI remains usable after the runtime compacts older model context."""
+
+    with playwright.sync_playwright() as p:
+        browser = launch_browser(p)
+        page = browser.new_page(viewport={"width": 390, "height": 844})
+        register(page, "react-context")
+
+        page.get_by_role("link", name="AI 助手").click()
+        page.get_by_role("heading", name="新对话").wait_for()
+        prompts = [f"上下文压缩验收第 {index} 轮：请给我一条通用饮食建议。" for index in range(1, 10)]
+        for prompt in prompts:
+            page.locator("#chat-input").fill(prompt)
+            page.get_by_role("button", name="发送问题").click()
+            page.get_by_text(prompt, exact=True).last.wait_for(timeout=30000)
+            page.get_by_role("button", name="停止生成").wait_for(state="detached", timeout=30000)
+
+        assert page.get_by_text("回答未完成", exact=True).count() == 0
+        page.reload(wait_until="domcontentloaded")
+        page.get_by_text(prompts[-1], exact=True).wait_for(timeout=30000)
+        assert page.get_by_text("回答未完成", exact=True).count() == 0
         browser.close()
