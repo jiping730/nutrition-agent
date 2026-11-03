@@ -1,0 +1,85 @@
+{
+  "base_url": "http://127.0.0.1:5000",
+  "started_at": "2026-11-03T10:58:00+0800",
+  "scenario": "health",
+  "results": [
+    {
+      "scenario": "health",
+      "offered_rate_qps": 1.0,
+      "duration_seconds": 60,
+      "requests": 60,
+      "elapsed_seconds": 59.01,
+      "achieved_rate_qps": 1.017,
+      "success_count": 60,
+      "error_count": 0,
+      "error_rate": 0.0,
+      "status_counts": {
+        "200": 60
+      },
+      "latency_ms": {
+        "p50": 18.17,
+        "p95": 25.35,
+        "p99": 28.46,
+        "max": 28.46,
+        "mean": 15.02
+      },
+      "first_byte_ms": {
+        "p50": 18.16,
+        "p95": 25.34,
+        "p99": 28.45
+      }
+    },
+    {
+      "scenario": "health",
+      "offered_rate_qps": 2.0,
+      "duration_seconds": 60,
+      "requests": 120,
+      "elapsed_seconds": 59.51,
+      "achieved_rate_qps": 2.016,
+      "success_count": 120,
+      "error_count": 0,
+      "error_rate": 0.0,
+      "status_counts": {
+        "200": 120
+      },
+      "latency_ms": {
+        "p50": 17.9,
+        "p95": 20.62,
+        "p99": 29.96,
+        "max": 33.15,
+        "mean": 14.36
+      },
+      "first_byte_ms": {
+        "p50": 17.89,
+        "p95": 20.6,
+        "p99": 29.95
+      }
+    },
+    {
+      "scenario": "health",
+      "offered_rate_qps": 5.0,
+      "duration_seconds": 60,
+      "requests": 300,
+      "elapsed_seconds": 59.82,
+      "achieved_rate_qps": 5.015,
+      "success_count": 300,
+      "error_count": 0,
+      "error_rate": 0.0,
+      "status_counts": {
+        "200": 300
+      },
+      "latency_ms": {
+        "p50": 17.56,
+        "p95": 21.89,
+        "p99": 26.14,
+        "max": 37.62,
+        "mean": 14.21
+      },
+      "first_byte_ms": {
+        "p50": 17.55,
+        "p95": 21.88,
+        "p99": 26.13
+      }
+    }
+  ]
+}

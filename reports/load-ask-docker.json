@@ -1,0 +1,87 @@
+{
+  "base_url": "http://127.0.0.1:5000",
+  "started_at": "2026-11-03T11:01:08+0800",
+  "scenario": "ask",
+  "results": [
+    {
+      "scenario": "ask",
+      "offered_rate_qps": 1.0,
+      "duration_seconds": 60,
+      "requests": 60,
+      "elapsed_seconds": 71.99,
+      "achieved_rate_qps": 0.833,
+      "success_count": 60,
+      "error_count": 0,
+      "error_rate": 0.0,
+      "status_counts": {
+        "200": 60
+      },
+      "latency_ms": {
+        "p50": 12751.22,
+        "p95": 18453.36,
+        "p99": 27417.76,
+        "max": 27417.76,
+        "mean": 13541.87
+      },
+      "first_byte_ms": {
+        "p50": 12751.21,
+        "p95": 18453.35,
+        "p99": 27417.75
+      }
+    },
+    {
+      "scenario": "ask",
+      "offered_rate_qps": 2.0,
+      "duration_seconds": 60,
+      "requests": 120,
+      "elapsed_seconds": 80.6,
+      "achieved_rate_qps": 1.476,
+      "success_count": 119,
+      "error_count": 1,
+      "error_rate": 0.0083,
+      "status_counts": {
+        "200": 119,
+        "network_error": 1
+      },
+      "latency_ms": {
+        "p50": 14039.7,
+        "p95": 21827.9,
+        "p99": 26593.67,
+        "max": 45024.15,
+        "mean": 14848.73
+      },
+      "first_byte_ms": {
+        "p50": 14039.69,
+        "p95": 21827.89,
+        "p99": 24305.15
+      }
+    },
+    {
+      "scenario": "ask",
+      "offered_rate_qps": 5.0,
+      "duration_seconds": 60,
+      "requests": 300,
+      "elapsed_seconds": 94.96,
+      "achieved_rate_qps": 3.149,
+      "success_count": 299,
+      "error_count": 1,
+      "error_rate": 0.0033,
+      "status_counts": {
+        "200": 299,
+        "network_error": 1
+      },
+      "latency_ms": {
+        "p50": 15781.96,
+        "p95": 24538.8,
+        "p99": 30148.21,
+        "max": 45025.42,
+        "mean": 16499.02
+      },
+      "first_byte_ms": {
+        "p50": 15781.95,
+        "p95": 24538.79,
+        "p99": 30148.2
+      }
+    }
+  ]
+}

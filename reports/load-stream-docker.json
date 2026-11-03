@@ -1,0 +1,86 @@
+{
+  "base_url": "http://127.0.0.1:5000",
+  "started_at": "2026-11-03T11:05:24+0800",
+  "scenario": "stream",
+  "results": [
+    {
+      "scenario": "stream",
+      "offered_rate_qps": 1.0,
+      "duration_seconds": 60,
+      "requests": 60,
+      "elapsed_seconds": 75.44,
+      "achieved_rate_qps": 0.795,
+      "success_count": 60,
+      "error_count": 0,
+      "error_rate": 0.0,
+      "status_counts": {
+        "200": 60
+      },
+      "latency_ms": {
+        "p50": 14714.26,
+        "p95": 22182.51,
+        "p99": 31673.99,
+        "max": 31673.99,
+        "mean": 15778.29
+      },
+      "first_byte_ms": {
+        "p50": 13912.29,
+        "p95": 20642.77,
+        "p99": 30761.79
+      }
+    },
+    {
+      "scenario": "stream",
+      "offered_rate_qps": 2.0,
+      "duration_seconds": 60,
+      "requests": 120,
+      "elapsed_seconds": 83.62,
+      "achieved_rate_qps": 1.435,
+      "success_count": 120,
+      "error_count": 0,
+      "error_rate": 0.0,
+      "status_counts": {
+        "200": 120
+      },
+      "latency_ms": {
+        "p50": 17715.2,
+        "p95": 26542.83,
+        "p99": 33619.29,
+        "max": 35259.65,
+        "mean": 18243.92
+      },
+      "first_byte_ms": {
+        "p50": 16026.27,
+        "p95": 23741.14,
+        "p99": 30640.78
+      }
+    },
+    {
+      "scenario": "stream",
+      "offered_rate_qps": 5.0,
+      "duration_seconds": 60,
+      "requests": 300,
+      "elapsed_seconds": 149.01,
+      "achieved_rate_qps": 1.98,
+      "success_count": 295,
+      "error_count": 5,
+      "error_rate": 0.0167,
+      "status_counts": {
+        "200": 295,
+        "network_error": 5
+      },
+      "latency_ms": {
+        "p50": 26089.77,
+        "p95": 45560.49,
+        "p99": 52453.49,
+        "max": 62761.37,
+        "mean": 27961.4
+      },
+      "first_byte_ms": {
+        "p50": 22482.93,
+        "p95": 42035.9,
+        "p99": 48580.57
+      }
+    }
+  ]
+}
